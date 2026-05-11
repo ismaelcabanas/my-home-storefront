@@ -30,3 +30,25 @@ npm run test
 - `eslint-config-codely` preset
 - `explicit-function-return-type: error`
 - TypeScript strict mode with decorators
+
+# Spec-Driven Development (SDD)
+
+- **Source of Truth:** All features must start with a specification file in `/specs`. 
+- **Format:** Use Markdown + Gherkin scenarios (Given/When/Then).
+- **Process:** Specification → Integration Tests → Implementation.
+- **Constraints:** Never implement logic that is not explicitly described in a Business Rule (BR) within the spec.
+
+# Testing Strategy
+
+- **API-First Integration:** Prioritize testing the API layer (`src/app/api/`) to validate Gherkin scenarios from the specs.
+- **Tools:** Use `supertest` for API integration and `jest` for unit tests.
+- **Coverage:** Focus on Business Rules (BR) enforcement rather than 100% line coverage.
+- **Object Mothers:** (Existing rule) Always use object mothers to instantiate aggregates in tests.
+- **Mocking:** (Existing rule) Mock domain interfaces at the infrastructure layer.
+
+# Outside-In TDD Workflow
+
+- **Step 1 (Red):** Create a high-level Integration Test in `src/app/api/` based on a Gherkin scenario. It must fail.
+- **Step 2 (Green):** Implement the Infrastructure (Controller) and the Application layer (Use Case).
+- **Step 3 (Refactor):** Move domain logic to the Domain layer (Aggregates/Entities) and use Object Mothers for testing.
+- **Rule:** Do not write Application or Domain code without a failing test at the API or Application level first.

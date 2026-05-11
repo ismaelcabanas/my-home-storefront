@@ -11,6 +11,12 @@ import { PostgresCookedDishRepository } from "../../../dishes/cooked-dishes/infr
 import { DishByIngredientsSuggester } from "../../../dishes/dishes/application/suggest/DishByIngredientsSuggester";
 import { DishByIngredientsSuggesterGateway } from "../../../dishes/dishes/domain/DishByIngredientsSuggesterGateway";
 import { AiSdkMinistral3DishByIngredientsSuggesterGateway } from "../../../dishes/dishes/infraestructure/AiSdkMinistral3DishByIngredientsSuggesterGateway";
+import { ProductCreator } from "../../../pantry/products/application/create/ProductCreator";
+import { AllProductsSearcher } from "../../../pantry/products/application/search-all/AllProductsSearcher";
+import { ProductByIdSearcher } from "../../../pantry/products/application/search-by-id/ProductByIdSearcher";
+import { ProductStockUpdater } from "../../../pantry/products/application/update-stock/ProductStockUpdater";
+import { ProductRepository } from "../../../pantry/products/domain/ProductRepository";
+import { PostgresProductRepository } from "../../../pantry/products/infrastructure/PostgresProductRepository";
 import { EmbeddingsGenerator } from "../../domain/EmbeddingsGenerator";
 import { EventBus } from "../../domain/event/EventBus";
 import { UuidGenerator } from "../../domain/UuidGenerator";
@@ -73,5 +79,13 @@ builder.registerAndUse(CookedDishCreator);
 builder.registerAndUse(AllCookedDishesSearcher);
 builder.registerAndUse(CookedDishByIdSearcher);
 builder.registerAndUse(CookedDishesBySimilarIngredientsSearcher);
+
+// Pantry - Products
+builder.register(ProductRepository).use(PostgresProductRepository);
+builder.registerAndUse(PostgresProductRepository);
+builder.registerAndUse(ProductCreator);
+builder.registerAndUse(ProductStockUpdater);
+builder.registerAndUse(AllProductsSearcher);
+builder.registerAndUse(ProductByIdSearcher);
 
 export const container = builder.build();
