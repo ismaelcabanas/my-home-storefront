@@ -11,6 +11,10 @@ import { PostgresCookedDishRepository } from "../../../dishes/cooked-dishes/infr
 import { DishByIngredientsSuggester } from "../../../dishes/dishes/application/suggest/DishByIngredientsSuggester";
 import { DishByIngredientsSuggesterGateway } from "../../../dishes/dishes/domain/DishByIngredientsSuggesterGateway";
 import { AiSdkMinistral3DishByIngredientsSuggesterGateway } from "../../../dishes/dishes/infraestructure/AiSdkMinistral3DishByIngredientsSuggesterGateway";
+import { InventoryItemCreator } from "../../../inventory/inventory-items/application/create/InventoryItemCreator";
+import { InventoryItemRepository } from "../../../inventory/inventory-items/domain/InventoryItemRepository";
+import { PostgresInventoryItemRepository } from "../../../inventory/inventory-items/infrastructure/PostgresInventoryItemRepository";
+import { Clock } from "../../domain/Clock";
 import { EmbeddingsGenerator } from "../../domain/EmbeddingsGenerator";
 import { EventBus } from "../../domain/event/EventBus";
 import { UuidGenerator } from "../../domain/UuidGenerator";
@@ -18,6 +22,7 @@ import { AiSdkEmbeddingsGenerator } from "../AiSdkEmbeddingsGenerator";
 import { InMemoryEventBus } from "../domain-event/InMemoryEventBus";
 import { NativeUuidGenerator } from "../NativeUuidGenerator";
 import { PostgresConnection } from "../postgres/PostgresConnection";
+import { SystemClock } from "../SystemClock";
 
 const builder = new ContainerBuilder();
 
@@ -36,6 +41,7 @@ builder
 	.asSingleton();
 
 builder.register(UuidGenerator).use(NativeUuidGenerator);
+builder.register(Clock).use(SystemClock);
 builder
 	.register(EmbeddingsGenerator)
 	.useFactory(
@@ -73,5 +79,10 @@ builder.registerAndUse(CookedDishCreator);
 builder.registerAndUse(AllCookedDishesSearcher);
 builder.registerAndUse(CookedDishByIdSearcher);
 builder.registerAndUse(CookedDishesBySimilarIngredientsSearcher);
+
+// Inventory - InventoryItem
+builder.register(InventoryItemRepository).use(PostgresInventoryItemRepository);
+builder.registerAndUse(PostgresInventoryItemRepository);
+builder.registerAndUse(InventoryItemCreator);
 
 export const container = builder.build();
