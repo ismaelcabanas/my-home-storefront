@@ -1,0 +1,57 @@
+import { InventoryItem } from "../../../../../src/contexts/inventory/inventory-items/domain/InventoryItem";
+import { InventoryItemNotFoundError } from "../../../../../src/contexts/inventory/inventory-items/domain/InventoryItemNotFoundError";
+import { InventoryItemRepository } from "../../../../../src/contexts/inventory/inventory-items/domain/InventoryItemRepository";
+
+export class MockInventoryItemRepository implements InventoryItemRepository {
+	private readonly items = new Map<string, InventoryItem>();
+	private readonly savedItems: InventoryItem[] = [];
+	private readonly findByIdMock = new Map<string, InventoryItem | null>();
+	private readonly expectedSaveItems: InventoryItem[] = [];
+
+	async save(item: InventoryItem): Promise<void> {
+		this.items.set(item.id.value, item);
+		this.savedItems.push(item);
+	}
+
+	async searchById(id: string): Promise<InventoryItem | null> {
+		if (this.findByIdMock.has(id)) {
+			return this.findByIdMock.get(id) ?? null;
+		}
+
+		return this.items.get(id) ?? null;
+	}
+
+	async findById(id: string): Promise<InventoryItem> {
+		const item = await this.searchById(id);
+		if (item === null) {
+			throw new InventoryItemNotFoundError(id);
+		}
+
+		return item;
+	}
+
+	shouldSave(expectedItem: InventoryItem): void {
+		this.expectedSaveItems.push(expectedItem);
+	}
+
+	shouldSearchById(id: string, mockItem: InventoryItem | null): void {
+		this.findByIdMock.set(id, mockItem);
+	}
+
+	shouldFindById(id: string, mockItem: InventoryItem | null): void {
+		this.findByIdMock.set(id, mockItem);
+	}
+
+	verify(): void {
+		expect(this.savedItems).toHaveLength(this.expectedSaveItems.length);
+
+		for (let i = 0; i < this.expectedSaveItems.length; i++) {
+			const expected = this.expectedSaveItems[i];
+			const actual = this.savedItems[i];
+
+			expect(actual.id.value).toBe(expected.id.value);
+			expect(actual.name.value).toBe(expected.name.value);
+			expect(actual.state.value).toBe(expected.state.value);
+		}
+	}
+}

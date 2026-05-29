@@ -12,6 +12,9 @@ import { DishByIngredientsSuggester } from "../../../dishes/dishes/application/s
 import { DishByIngredientsSuggesterGateway } from "../../../dishes/dishes/domain/DishByIngredientsSuggesterGateway";
 import { AiSdkMinistral3DishByIngredientsSuggesterGateway } from "../../../dishes/dishes/infraestructure/AiSdkMinistral3DishByIngredientsSuggesterGateway";
 import { InventoryItemCreator } from "../../../inventory/inventory-items/application/create/InventoryItemCreator";
+import { InventoryItemDepleter } from "../../../inventory/inventory-items/application/deplete/InventoryItemDepleter";
+import { InventoryItemLowMarker } from "../../../inventory/inventory-items/application/mark-low/InventoryItemLowMarker";
+import { InventoryItemReplenisher } from "../../../inventory/inventory-items/application/replenish/InventoryItemReplenisher";
 import { InventoryItemRepository } from "../../../inventory/inventory-items/domain/InventoryItemRepository";
 import { PostgresInventoryItemRepository } from "../../../inventory/inventory-items/infrastructure/PostgresInventoryItemRepository";
 import { Clock } from "../../domain/Clock";
@@ -84,5 +87,8 @@ builder.registerAndUse(CookedDishesBySimilarIngredientsSearcher);
 builder.register(InventoryItemRepository).use(PostgresInventoryItemRepository);
 builder.registerAndUse(PostgresInventoryItemRepository);
 builder.registerAndUse(InventoryItemCreator);
+builder.registerAndUse(InventoryItemReplenisher);
+builder.registerAndUse(InventoryItemLowMarker);
+builder.registerAndUse(InventoryItemDepleter);
 
 export const container = builder.build();

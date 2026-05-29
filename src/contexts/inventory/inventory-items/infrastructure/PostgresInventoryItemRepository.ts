@@ -3,6 +3,7 @@ import { Row } from "postgres";
 
 import { PostgresRepository } from "../../../shared/infrastructure/postgres/PostgresRepository";
 import { InventoryItem } from "../domain/InventoryItem";
+import { InventoryItemNotFoundError } from "../domain/InventoryItemNotFoundError";
 import { InventoryItemRepository } from "../domain/InventoryItemRepository";
 
 @Service()
@@ -21,8 +22,25 @@ export class PostgresInventoryItemRepository
 				${primitives.state},
 				${primitives.requiresPurchase},
 				${primitives.createdAt}
-			);
+			)
+			ON CONFLICT (id) DO UPDATE SET
+				state = EXCLUDED.state,
+				requires_purchase = EXCLUDED.requires_purchase
 		`;
+	}
+
+	async searchById(id: string): Promise<InventoryItem | null> {
+		return await this
+			.searchOne`SELECT * FROM inventory.inventory_items WHERE id = ${id}`;
+	}
+
+	async findById(id: string): Promise<InventoryItem> {
+		const item = await this.searchById(id);
+		if (item === null) {
+			throw new InventoryItemNotFoundError(id);
+		}
+
+		return item;
 	}
 
 	protected toAggregate(row: Row): InventoryItem {
