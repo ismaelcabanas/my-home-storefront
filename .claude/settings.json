@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": []
+  },
+  "commands": {
+    "enabled": [
+      "spdd-analysis",
+      "spdd-api-test",
+      "spdd-generate",
+      "spdd-prompt-update",
+      "spdd-reasons-canvas",
+      "spdd-story",
+      "spdd-sync"
+    ]
+  }
+}
