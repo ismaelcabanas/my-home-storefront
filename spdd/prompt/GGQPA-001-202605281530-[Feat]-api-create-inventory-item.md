@@ -136,6 +136,12 @@ classDiagram
 2. API route depends on `InventoryItemCreator`
 3. `PostgresInventoryItemRepository` depends on `PostgresConnection`
 
+### Test Dependencies
+1. `MockInventoryItemRepository` implements `InventoryItemRepository` for unit testing
+2. `InventoryItemMother` depends on `InventoryItem` and faker for test data generation
+3. `InventoryItemCreator.test` depends on `MockInventoryItemRepository`, `MockUuidGenerator`, `MockClock`, `InventoryItemMother`
+4. Value object tests depend on their respective domain classes and `InvalidInventoryItemNameError`
+
 ### Layered Architecture
 1. **API Layer** (`src/app/api/inventory/items/route.ts`): Request parsing, validation, HTTP response mapping
 2. **Application Layer** (`InventoryItemCreator`): Orchestrates creation flow, coordinates dependencies
@@ -285,18 +291,127 @@ classDiagram
    );
    ```
 
+### Create Object Mother - InventoryItemMother
+1. **File**: `tests/contexts/inventory/inventory-items/domain/InventoryItemMother.ts`
+2. **Responsibility**: Factory for creating `InventoryItem` aggregates in tests with sensible defaults
+3. **Methods**:
+   - `static create(params?: Partial<InventoryItemPrimitives>): InventoryItem`
+     - Logic:
+       - Create default primitives using faker: random UUID for id, random product name for name, "Available" for state, false for requiresPurchase, recent date for createdAt
+       - Merge with provided params to allow overrides
+       - Return `InventoryItem.fromPrimitives(primitives)`
+
+### Create Mock Repository - MockInventoryItemRepository
+1. **File**: `tests/contexts/inventory/inventory-items/infrastructure/MockInventoryItemRepository.ts`
+2. **Responsibility**: In-memory implementation of `InventoryItemRepository` for unit testing
+3. **Attributes**:
+   - `items: Map<string, InventoryItem>` - in-memory storage
+   - `savedItems: InventoryItem[]` - tracks all saved items for verification
+   - `expectedSaveItems: InventoryItem[]` - expected items to be saved
+4. **Methods**:
+   - `save(item: InventoryItem): Promise<void>` - stores item in map and tracks in savedItems
+   - `shouldSave(expectedItem: InventoryItem): void` - sets expectation for save verification
+   - `verify(): void` - asserts savedItems match expectedSaveItems by comparing id, name, state
+
+### Create Unit Test - InventoryItemCreator
+1. **File**: `tests/contexts/inventory/inventory-items/application/create/InventoryItemCreator.test.ts`
+2. **Responsibility**: Unit tests for `InventoryItemCreator` use case
+3. **Dependencies**: `MockInventoryItemRepository`, `MockUuidGenerator`, `MockClock`, `InventoryItemMother`
+4. **Test Cases**:
+   - **"create inventory item with valid name"**
+     - Arrange: Configure MockUuidGenerator to return a fixed UUID, MockClock to return a fixed date, create expected InventoryItem using InventoryItemMother with state "Available" and requiresPurchase false
+     - Act: Call `creator.create("Milk")`
+     - Assert: Verify returned primitives match expected values (id, name, state="Available", requiresPurchase=false, createdAt), verify repository.save was called with correct item
+   - **"throw InvalidInventoryItemNameError for empty name"**
+     - Arrange: No special setup needed
+     - Act & Assert: Call `creator.create("")` and expect it to throw `InvalidInventoryItemNameError`
+   - **"throw InvalidInventoryItemNameError for whitespace-only name"**
+     - Arrange: No special setup needed
+     - Act & Assert: Call `creator.create("   ")` and expect it to throw `InvalidInventoryItemNameError`
+   - **"trim whitespace from name"**
+     - Arrange: Configure MockUuidGenerator and MockClock with fixed values
+     - Act: Call `creator.create("  Milk  ")`
+     - Assert: Verify returned name is "Milk" (trimmed)
+
+### Create Unit Test - InventoryItemName Value Object
+1. **File**: `tests/contexts/inventory/inventory-items/domain/InventoryItemName.test.ts`
+2. **Responsibility**: Unit tests for `InventoryItemName` value object validation
+3. **Test Cases**:
+   - **"create valid name"**
+     - Act: Call `InventoryItemName.create("Milk")`
+     - Assert: Verify value is "Milk"
+   - **"trim whitespace from name"**
+     - Act: Call `InventoryItemName.create("  Milk  ")`
+     - Assert: Verify value is "Milk"
+   - **"throw InvalidInventoryItemNameError for empty name"**
+     - Act & Assert: Call `InventoryItemName.create("")` and expect it to throw `InvalidInventoryItemNameError`
+   - **"throw InvalidInventoryItemNameError for whitespace-only name"**
+     - Act & Assert: Call `InventoryItemName.create("   ")` and expect it to throw `InvalidInventoryItemNameError`
+   - **"throw InvalidInventoryItemNameError for name exceeding 255 characters"**
+     - Act & Assert: Call `InventoryItemName.create("a".repeat(256))` and expect it to throw `InvalidInventoryItemNameError`
+
+### Create Unit Test - InventoryItemState Value Object
+1. **File**: `tests/contexts/inventory/inventory-items/domain/InventoryItemState.test.ts`
+2. **Responsibility**: Unit tests for `InventoryItemState` value object
+3. **Test Cases**:
+   - **"create Available state"**
+     - Act: Call `InventoryItemState.Available()`
+     - Assert: Verify value is "Available", isAvailable() returns true, derivesRequiresPurchase() returns false
+   - **"create Low state"**
+     - Act: Call `InventoryItemState.Low()`
+     - Assert: Verify value is "Low", isAvailable() returns false, derivesRequiresPurchase() returns true
+   - **"create Depleted state"**
+     - Act: Call `InventoryItemState.Depleted()`
+     - Assert: Verify value is "Depleted", isAvailable() returns false, derivesRequiresPurchase() returns true
+   - **"create state from valid value"**
+     - Act: Call `InventoryItemState.fromValue("Low")`
+     - Assert: Verify value is "Low"
+   - **"throw error for invalid state value"**
+     - Act & Assert: Call `InventoryItemState.fromValue("Invalid")` and expect it to throw error
+
+### Create Unit Test - InventoryItem Aggregate
+1. **File**: `tests/contexts/inventory/inventory-items/domain/InventoryItem.test.ts`
+2. **Responsibility**: Unit tests for `InventoryItem` aggregate creation and behavior
+3. **Test Cases**:
+   - **"create new item with Available state"**
+     - Act: Call `InventoryItem.create(uuid, "Milk", new Date())`
+     - Assert: Verify state is "Available", requiresPurchase is false
+   - **"derive requiresPurchase as false when Available"**
+     - Arrange: Create item using InventoryItemMother with state "Available"
+     - Assert: Verify requiresPurchase is false
+   - **"derive requiresPurchase as true when Low"**
+     - Arrange: Create item using InventoryItemMother with state "Low"
+     - Assert: Verify requiresPurchase is true
+   - **"derive requiresPurchase as true when Depleted"**
+     - Arrange: Create item using InventoryItemMother with state "Depleted"
+     - Assert: Verify requiresPurchase is true
+   - **"convert to primitives"**
+     - Arrange: Create item using InventoryItemMother
+     - Act: Call `item.toPrimitives()`
+     - Assert: Verify returned object contains id, name, state, requiresPurchase, createdAt as ISO string
+   - **"reconstruct from primitives"**
+     - Arrange: Define primitives object
+     - Act: Call `InventoryItem.fromPrimitives(primitives)`
+     - Assert: Verify all properties match original primitives
+
 ## Norms
 
 1. **File Organization**:
    - Domain: `src/contexts/inventory/inventory-items/domain/`
    - Application: `src/contexts/inventory/inventory-items/application/create/`
    - Infrastructure: `src/contexts/inventory/inventory-items/infrastructure/`
+   - Tests mirror source structure: `tests/contexts/inventory/inventory-items/`
+   - Object Mothers: `tests/contexts/inventory/inventory-items/domain/{Entity}Mother.ts`
+   - Mock Repositories: `tests/contexts/inventory/inventory-items/infrastructure/Mock{Entity}Repository.ts`
 
 2. **Naming Conventions**:
    - Aggregates: `{Entity}.ts`
    - Value Objects: `{Entity}{Property}.ts`
    - Repositories: `{Entity}Repository.ts` (interface), `Postgres{Entity}Repository.ts` (implementation)
    - Use Cases: `{Entity}{Action}.ts` (e.g., `InventoryItemCreator`)
+   - Object Mothers: `{Entity}Mother.ts`
+   - Mock Implementations: `Mock{Entity}Repository.ts`
+   - Unit Tests: `{ClassName}.test.ts`
 
 3. **Dependency Injection**:
    - All services annotated with `@Service()` from `diod`
@@ -317,6 +432,15 @@ classDiagram
    - Store as `TIMESTAMPTZ` in PostgreSQL
    - Serialize as ISO 8601 strings in API responses
    - Use `Clock` interface for testability
+
+7. **Testing**:
+   - Use Object Mothers to instantiate aggregates in tests (never call constructors directly)
+   - Mock objects implement domain interfaces (e.g., `MockInventoryItemRepository` implements `InventoryItemRepository`)
+   - Mock objects provide `should*()` methods to set expectations and `verify()` to assert
+   - Test describe blocks use format: `describe("{ClassName} should", () => ...)`
+   - Test cases use Arrange-Act-Assert pattern with comments
+   - Use faker for random test data generation
+   - Shared mocks (`MockClock`, `MockUuidGenerator`) live in `tests/contexts/shared/`
 
 ## Safeguards
 
