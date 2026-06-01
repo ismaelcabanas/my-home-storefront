@@ -316,3 +316,211 @@ Implement a filtered query pattern following hexagonal architecture principles:
     - **AC7 emphasis**: Cursor behavior with filtered items must be tested explicitly
     - **Edge cases**: Empty list, single item, cursor from stale state
     - **Performance testing**: Query execution time with large datasets (1000+ items)
+
+## Testing
+
+### Test Organization and Structure
+
+1. **Test Directory Structure**:
+   - Domain tests: `tests/contexts/inventory/inventory-items/domain/` - Test domain entities, value objects, and business rules
+   - Application tests: `tests/contexts/inventory/inventory-items/application/` - Test use cases and application services
+   - Infrastructure tests: `tests/contexts/inventory/inventory-items/infrastructure/` - Test repository implementations and external integrations
+   - API tests: `tests/app/api/inventory/shopping-list/` - Test API route handlers and HTTP interactions
+
+2. **Test Naming Conventions**:
+   - Test files mirror source structure: `ShoppingItemLister.test.ts` for `ShoppingItemLister.ts`
+   - Describe behavior in test names: `should_return_paginated_items_when_cursor_provided()`
+   - Group related tests in `describe` blocks with clear context labels
+   - Use `test` or `it` consistently for individual test cases
+
+3. **Test Framework and Tools**:
+   - Test runner: Vitest for fast unit and integration tests
+   - Assertion library: Built-in Vitest assertions with explicit matchers
+   - Coverage: Vitest coverage reports with 80% minimum threshold
+   - Mocking: Vitest `vi` module for mocking and spying
+
+### Unit Tests - Domain Layer
+
+1. **InventoryItemDomain Tests** (`tests/contexts/inventory/inventory-items/domain/InventoryItem.test.ts`):
+   - **State-Purchase Derivation**: Test that `derivesRequiresPurchase()` returns correct value for each state (Available → false, Low → true, Depleted → true)
+   - **State Transitions**: Verify state transitions correctly update requires_purchase flag
+   - **Object Creation**: Test factory method `create()` generates valid aggregates with proper defaults
+   - **Primitives Conversion**: Validate `toPrimitives()` and `fromPrimitives()` round-trip correctly
+
+2. **InventoryItemState Tests** (`tests/contexts/inventory/inventory-items/domain/InventoryItemState.test.ts`):
+   - **Value Object Immutability**: Ensure state values cannot be modified after creation
+   - **Factory Methods**: Test `Available()`, `Low()`, `Depleted()` return distinct state instances
+   - **Equality**: State value objects with same value are equal
+   - **Derivation Logic**: `isAvailable()` and `derivesRequiresPurchase()` return correct boolean values
+
+3. **PaginatedInventoryItems Tests** (`tests/contexts/inventory/inventory-items/domain/PaginatedInventoryItems.test.ts`):
+   - **Factory Methods**: Test `createPaginatedInventoryItems()` validates inputs (nextCursor null when hasMore false)
+   - **Empty Result**: Validate emptyPaginatedInventoryItems returns correct structure
+   - **Cursor Consistency**: Ensure hasMore and nextCursor are logically consistent
+   - **Immutability**: Verify returned structure cannot be modified externally
+
+### Unit Tests - Application Layer
+
+1. **ShoppingItemLister Tests** (`tests/contexts/inventory/inventory-items/application/shopping-list/ShoppingItemLister.test.ts`):
+   - **Constructor Injection**: Verify service receives InventoryItemRepository dependency
+   - **List All Default**: Test `listAll()` with no parameters returns default 20 items
+   - **List All With Limit**: Test `listAll()` with custom limit respects 1-100 validation
+   - **List All With Cursor**: Test `listAll()` passes cursor to repository correctly
+   - **Repository Delegation**: Verify exactly one call to repository.searchByRequiresPurchase()
+   - **Error Propagation**: Test InvalidCursorError propagates without catching
+   - **Return Value**: Validate PaginatedInventoryItems structure matches repository response
+
+2. **Input Validation Tests**:
+   - **Limit Boundary Cases**: Test limit = 1, limit = 100, limit = 0 (default to 20), limit = 101 (default to 20)
+   - **Null/Undefined Limit**: Test missing limit parameter defaults to 20
+   - **Cursor Null**: Test null cursor passed correctly to repository
+   - **Cursor Empty String**: Test empty string cursor handled by repository
+
+### Integration Tests - Repository Layer
+
+1. **PostgresInventoryItemRepository Tests** (`tests/contexts/inventory/inventory-items/infrastructure/PostgresInventoryItemRepository.test.ts`):
+   - **Setup/Teardown**: Use test database container (Docker) with schema migration before each test
+   - **Truncation**: Clean inventory_items table between tests for isolation
+   - **Search By Requires Purchase - No Cursor**: Insert test items with mixed requires_purchase values, verify only true items returned in alphabetical order
+   - **Search By Requires Purchase - With Cursor**: Insert test items, verify cursor skips correctly to next page of filtered results
+   - **Search By Requires Purchase - Empty Result**: Insert only items with requires_purchase = false, verify empty result returned (no error)
+   - **Search By Requires Purchase - Pagination Boundary**: Insert exactly limit items, verify hasMore = false and nextCursor = null
+   - **Search By Requires Purchase - Has More**: Insert limit + 1 items, verify hasMore = true and valid nextCursor
+   - **Search By Requires Purchase - Last Page**: Verify cursor decoding and comparison logic works correctly
+   - **Invalid Cursor Error**: Test malformed base64 cursor throws InvalidCursorError
+
+2. **SQL Query Validation**:
+   - **Filtering Logic**: Verify WHERE clause filters only requires_purchase = true
+   - **Ordering**: Verify results ordered by name ASC, created_at ASC
+   - **Index Usage**: Run EXPLAIN ANALYZE to verify composite index usage on query
+   - **Parameter Binding**: Verify SQL parameters properly escape to prevent injection
+
+3. **Test Data Fixtures**:
+   - Use Object Mother pattern: `InventoryItemMother.create()` for generating test aggregates
+   - Create varied test scenarios: all available, all depleted, mixed states
+   - Test pagination with different dataset sizes: 0, 1, 20, 21, 100, 101 items
+
+### Integration Tests - API Layer
+
+1. **ShoppingListAPIRoute Tests** (`tests/app/api/inventory/shopping-list/route.test.ts`):
+   - **Setup**: Mock ShoppingItemLister in container, test HTTP GET requests
+   - **Success Response - No Params**: Test GET /api/inventory/shopping-list returns 200 with default 20 items
+   - **Success Response - Custom Limit**: Test GET with ?limit=5 returns 5 items in items array
+   - **Success Response - With Cursor**: Test GET with ?cursor=... returns correct page of results
+   - **Invalid Cursor - 400**: Test GET with malformed cursor returns 400 Bad Request with clear error message
+   - **Limit Validation - Edge Cases**: Test ?limit=0, ?limit=101, ?limit=abc all default to 20
+   - **Empty Shopping List - 200**: Test GET with no items returns {items: [], nextCursor: null, hasMore: false} with HTTP 200
+   - **Response Format**: Verify JSON response matches PaginatedInventoryItems structure
+   - **Content-Type**: Verify response includes Content-Type: application/json
+
+2. **Acceptance Criteria Mapping**:
+   - **AC1 (Low/Depleted Filter)**: Integration test verifies only items with requires_purchase = true returned
+   - **AC2 (Pagination)**: Test cursor-based pagination with limit parameter
+   - **AC3 (Alphabetical)**: Verify items ordered by name ASC, created_at ASC
+   - **AC4 (Limit 1-100)**: Test limit validation at boundaries and defaults
+   - **AC5 (NextCursor)**: Verify nextCursor null when hasMore false, valid token when hasMore true
+   - **AC6 (HasMore)**: Verify hasMore boolean correctly indicates additional pages
+   - **AC7 (Cursor Skip)**: Test that cursor skips non-matching items (state changed from Low to Available after cursor created)
+
+3. **Mock Service Integration**:
+   - Use `MockShoppingItemLister` implements `ShoppingItemLister` interface
+   - Configure mock responses for different scenarios (empty, single page, multiple pages)
+   - Verify API layer correctly parses query parameters and passes to service
+   - Verify error handling catches InvalidCursorError and returns 400
+
+### Test Patterns and Conventions
+
+1. **Object Mother Pattern** (`tests/contexts/inventory/inventory-items/domain/InventoryItemMother.ts`):
+   - **Purpose**: Create test aggregates without repeating setup code
+   - **Methods**: `create()`, `createWithState(state)`, `createList(count)`
+   - **Default Values**: Use realistic defaults (UUID v4 for ID, ISO timestamp for createdAt)
+   - **Randomization**: Support optional random values for uniqueness testing
+
+2. **Mock Objects** (`tests/contexts/inventory/inventory-items/infrastructure/MockInventoryItemRepository.ts`):
+   - **Implementation**: Implement domain interface `InventoryItemRepository`
+   - **In-Memory Storage**: Use Map or array to simulate persistence
+   - **Spy Capability**: Track method calls and parameters for verification
+   - **Reset**: Support reset between tests for isolation
+
+3. **Test Builders** (`tests/contexts/inventory/inventory-items/application/PaginatedInventoryItemsBuilder.ts`):
+   - **Purpose**: Build complex test objects like PaginatedInventoryItems with custom fields
+   - **Fluent API**: `builder.withItems([...]).withNextCursor("...").withHasMore(true).build()`
+   - **Default Values**: Provide sensible defaults for all fields
+   - **Validation**: Enforce invariants during build (nextCursor null when hasMore false)
+
+4. **Shared Test Utilities** (`tests/contexts/shared/testing/`):
+   - **Database Test Utilities**: Helper functions for test database setup/teardown
+   - **Test Clock**: Fixed clock for deterministic timestamp testing
+   - **Assertion Helpers**: Custom matchers for domain-specific validations
+
+### Coverage Requirements
+
+1. **Coverage Thresholds**:
+   - Domain layer: 90% minimum (critical business logic)
+   - Application layer: 80% minimum (use case orchestration)
+   - Infrastructure layer: 70% minimum (integration adapters)
+   - Overall: 80% minimum across all layers
+
+2. **Critical Path Coverage**:
+   - Happy path for all operations
+   - All validation branches (invalid limit, invalid cursor, null cursor)
+   - All error handling paths (InvalidCursorError, empty results)
+   - All pagination scenarios (first page, middle page, last page, empty)
+
+3. **Edge Case Coverage**:
+   - Empty result sets
+   - Single item results
+   - Exact limit matches
+   - Limit + 1 items (hasMore boundary)
+   - Malformed cursor tokens
+   - State transitions after cursor creation (AC7)
+
+### Test Data Management
+
+1. **Test Database**:
+   - Use separate test database schema or Docker container
+   - Run migrations before test suite
+   - Truncate tables between tests for isolation
+   - Seed with consistent test data using fixtures
+
+2. **Test Isolation**:
+   - Each test should be independent and runnable in isolation
+   - Use test-specific UUIDs for entities to avoid conflicts
+   - Reset mock objects before each test
+   - Clean up database state in afterEach hooks
+
+3. **Deterministic Testing**:
+   - Use fixed timestamps for createdAt to ensure consistent ordering
+   - Seed random number generators for reproducible test data
+   - Avoid dependencies on test execution order
+   - Use test clocks instead of system time
+
+### Performance Testing
+
+1. **Query Performance Tests**:
+   - **Large Dataset**: Insert 1000+ inventory items with mixed states
+   - **Index Verification**: Run EXPLAIN ANALYZE on searchByRequiresPurchase query
+   - **Execution Time**: Query should complete in under 100ms with proper index
+   - **Pagination Efficiency**: Verify cursor pagination uses index for both filtering and ordering
+
+2. **Load Testing** (optional for API layer):
+   - **Concurrent Requests**: Test 10 concurrent requests to shopping-list endpoint
+   - **Response Time**: Average response should be under 200ms
+   - **No Deadlocks**: Verify database transactions do not deadlock under load
+
+### Test Execution
+
+1. **Test Commands**:
+   ```bash
+   npm run test                    # Run all tests
+   npm run test:unit              # Run unit tests only
+   npm run test:integration       # Run integration tests only
+   npm run test:coverage          # Run tests with coverage report
+   npm run test:watch             # Watch mode for development
+   ```
+
+2. **CI/CD Integration**:
+   - Tests run on every push
+   - Coverage gates prevent merging below 80%
+   - Integration tests require test database container
+   - Failed tests block deployment
