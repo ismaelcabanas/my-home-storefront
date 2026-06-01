@@ -9,4 +9,9 @@ export abstract class InventoryItemRepository {
 		limit: number,
 		cursor: string | null,
 	): Promise<PaginatedInventoryItems>;
+
+	abstract searchByRequiresPurchase(
+		limit: number,
+		cursor: string | null,
+	): Promise<PaginatedInventoryItems>;
 }

@@ -114,6 +114,72 @@ export class PostgresInventoryItemRepository
 		);
 	}
 
+	async searchByRequiresPurchase(
+		limit: number,
+		cursor: string | null,
+	): Promise<PaginatedInventoryItems> {
+		// Input Validation: Validate limit between 1-100, default to 20
+		const validatedLimit =
+			typeof limit === "number" && limit >= 1 && limit <= 100
+				? limit
+				: 20;
+
+		// Fetch limit + 1 items to determine if more pages exist
+		const fetchLimit = validatedLimit + 1;
+
+		let items: InventoryItem[];
+
+		if (cursor === null || cursor === "") {
+			// No cursor: Start from beginning with WHERE requires_purchase = true filter
+			items = await this.searchMany`
+				SELECT * FROM inventory.inventory_items
+				WHERE requires_purchase = true
+				ORDER BY name ASC, created_at ASC
+				LIMIT ${fetchLimit}
+			`;
+		} else {
+			// Decode cursor using Cursor.decode()
+			const decodedCursor = Cursor.decode(cursor);
+
+			// Filter WHERE requires_purchase = true AND (name > cursor.name OR (name = cursor.name AND created_at > cursor.createdAt))
+			items = await this.searchMany`
+				SELECT * FROM inventory.inventory_items
+				WHERE requires_purchase = true
+				  AND (name > ${decodedCursor.name} OR (name = ${decodedCursor.name} AND created_at > ${decodedCursor.createdAt}))
+				ORDER BY name ASC, created_at ASC
+				LIMIT ${fetchLimit}
+			`;
+		}
+
+		// Edge Case: Empty result set
+		if (items.length === 0) {
+			return emptyPaginatedInventoryItems();
+		}
+
+		// If returned items > limit: Remove last item, set nextCursor from that item, hasMore = true
+		if (items.length > validatedLimit) {
+			const lastItem = items[validatedLimit];
+			const pageItems = items.slice(0, validatedLimit);
+			const nextCursor = new Cursor(
+				lastItem.name.value,
+				lastItem.createdAt,
+			).encode();
+
+			return createPaginatedInventoryItems(
+				pageItems.map((item) => item.toPrimitives()),
+				nextCursor,
+				true,
+			);
+		}
+
+		// If returned items <= limit: Set nextCursor = null, hasMore = false
+		return createPaginatedInventoryItems(
+			items.map((item) => item.toPrimitives()),
+			null,
+			false,
+		);
+	}
+
 	protected toAggregate(row: Row): InventoryItem {
 		return InventoryItem.fromPrimitives({
 			id: row.id as string,

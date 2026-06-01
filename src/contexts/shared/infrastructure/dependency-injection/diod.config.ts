@@ -16,6 +16,7 @@ import { InventoryItemDepleter } from "../../../inventory/inventory-items/applic
 import { InventoryItemLister } from "../../../inventory/inventory-items/application/list/InventoryItemLister";
 import { InventoryItemLowMarker } from "../../../inventory/inventory-items/application/mark-low/InventoryItemLowMarker";
 import { InventoryItemReplenisher } from "../../../inventory/inventory-items/application/replenish/InventoryItemReplenisher";
+import { ShoppingItemLister } from "../../../inventory/inventory-items/application/shopping-list/ShoppingItemLister";
 import { InventoryItemRepository } from "../../../inventory/inventory-items/domain/InventoryItemRepository";
 import { PostgresInventoryItemRepository } from "../../../inventory/inventory-items/infrastructure/PostgresInventoryItemRepository";
 import { Clock } from "../../domain/Clock";
@@ -92,5 +93,6 @@ builder.registerAndUse(InventoryItemLister);
 builder.registerAndUse(InventoryItemReplenisher);
 builder.registerAndUse(InventoryItemLowMarker);
 builder.registerAndUse(InventoryItemDepleter);
+builder.registerAndUse(ShoppingItemLister);
 
 export const container = builder.build();

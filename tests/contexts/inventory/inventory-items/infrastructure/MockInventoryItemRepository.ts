@@ -93,6 +93,65 @@ export class MockInventoryItemRepository implements InventoryItemRepository {
 		);
 	}
 
+	async searchByRequiresPurchase(
+		limit: number,
+		cursor: string | null,
+	): Promise<PaginatedInventoryItems> {
+		// Get all items requiring purchase and sort by name ASC, created_at ASC
+		const allItems = Array.from(this.items.values())
+			.filter((item) => item.requiresPurchase)
+			.sort((a, b) => {
+				const nameComparison = a.name.value.localeCompare(b.name.value);
+				if (nameComparison !== 0) {
+					return nameComparison;
+				}
+
+				return a.createdAt.getTime() - b.createdAt.getTime();
+			});
+
+		// Find starting position based on cursor
+		let startIndex = 0;
+		if (cursor !== null && cursor !== "") {
+			const decodedCursor = Cursor.decode(cursor);
+			startIndex = allItems.findIndex(
+				(item) =>
+					item.name.value > decodedCursor.name ||
+					(item.name.value === decodedCursor.name &&
+						item.createdAt > decodedCursor.createdAt),
+			);
+			if (startIndex === -1) {
+				startIndex = allItems.length;
+			}
+		}
+
+		// Get items starting from cursor position
+		const itemsFromCursor = allItems.slice(startIndex);
+
+		// Empty result set
+		if (itemsFromCursor.length === 0) {
+			return emptyPaginatedInventoryItems();
+		}
+
+		// Determine if there are more results
+		const hasMore = itemsFromCursor.length > limit;
+		const pageItems = itemsFromCursor.slice(0, limit);
+
+		let nextCursor: string | null = null;
+		if (hasMore) {
+			const lastItem = pageItems[pageItems.length - 1];
+			nextCursor = new Cursor(
+				lastItem.name.value,
+				lastItem.createdAt,
+			).encode();
+		}
+
+		return createPaginatedInventoryItems(
+			pageItems.map((item) => item.toPrimitives()),
+			nextCursor,
+			hasMore,
+		);
+	}
+
 	shouldSave(expectedItem: InventoryItem): void {
 		this.expectedSaveItems.push(expectedItem);
 	}
