@@ -264,6 +264,205 @@ classDiagram
    - Rationale: Optimize ORDER BY name ASC, created_at ASC query performance
    - Note: Idempotent (use IF NOT EXISTS or CONFLICT check if needed)
 
+## Test Specifications
+
+### Cursor Value Object Tests
+Test file location: `tests/contexts/inventory/inventory-items/domain/cursor.spec.ts`
+
+1. **Encode Round-Trip Test**:
+   - Arrange: Create Cursor instance with name "Apple" and createdAt "2024-01-15T10:00:00Z"
+   - Act: Call encode(), then call decode() on the result
+   - Assert: Decoded cursor equals original cursor (name and createdAt match)
+
+2. **Decode Invalid Base64 Test**:
+   - Arrange: Provide "not-valid-base64!!!" as token
+   - Act: Call Cursor.decode(token)
+   - Assert: Throws InvalidCursorError with descriptive message
+
+3. **Decode Invalid JSON Test**:
+   - Arrange: Base64-encode invalid JSON string
+   - Act: Call Cursor.decode(encodedToken)
+   - Assert: Throws InvalidCursorError with descriptive message
+
+4. **Decode Missing Fields Test**:
+   - Arrange: Base64-encode JSON with only "name" field (missing "createdAt")
+   - Act: Call Cursor.decode(encodedToken)
+   - Assert: Throws InvalidCursorError or returns null
+
+5. **From Primitives Invalid Date Test**:
+   - Arrange: Provide primitives with invalid createdAt "not-a-date"
+   - Act: Call Cursor.fromPrimitives(primitives)
+   - Assert: Throws error indicating invalid date format
+
+6. **From Primitives Empty Name Test**:
+   - Arrange: Provide primitives with empty string for name
+   - Act: Call Cursor.fromPrimitives(primitives)
+   - Assert: Throws error indicating name cannot be empty
+
+### PaginatedInventoryItems DTO Tests
+Test file location: `tests/contexts/inventory/inventory-items/application/list/paginated-inventory-items.spec.ts`
+
+1. **Empty Factory Method Test**:
+   - Act: Call PaginatedInventoryItems.empty()
+   - Assert: Returns instance with items = [], nextCursor = null, hasMore = false
+
+2. **From Items With Next Page Test**:
+   - Arrange: Create array of 3 InventoryItem instances and set nextCursor = "encoded-token", hasMore = true
+   - Act: Call PaginatedInventoryItems.fromItems(items, nextCursor, true)
+   - Assert: Returns instance with items array length 3, nextCursor = "encoded-token", hasMore = true
+
+3. **From Items Last Page Test**:
+   - Arrange: Create array of 2 InventoryItem instances and set nextCursor = null, hasMore = false
+   - Act: Call PaginatedInventoryItems.fromItems(items, null, false)
+   - Assert: Returns instance with items array length 2, nextCursor = null, hasMore = false
+
+4. **From Items Consistency Check Test**:
+   - Arrange: Create items array, set nextCursor = null but hasMore = true (inconsistent state)
+   - Act: Call PaginatedInventoryItems.fromItems(items, null, true)
+   - Assert: Should either throw error or normalize to consistent state (implementation decision)
+
+### InventoryItemLister Application Service Tests
+Test file location: `tests/contexts/inventory/inventory-items/application/list/inventory-item-lister.spec.ts`
+
+1. **List All First Page Test**:
+   - Arrange: Mock InventoryItemRepository to return 20 items with nextCursor and hasMore = true
+   - Act: Call listAll(limit = 20, cursor = null)
+   - Assert: Returns PaginatedInventoryItems with 20 items, valid nextCursor, hasMore = true
+
+2. **List All With Default Parameters Test**:
+   - Arrange: Mock InventoryItemRepository to return empty results
+   - Act: Call listAll() without parameters
+   - Assert: Repository called with limit = 20, cursor = null, returns empty result
+
+3. **List All With Custom Limit Test**:
+   - Arrange: Mock InventoryItemRepository
+   - Act: Call listAll(limit = 50, cursor = null)
+   - Assert: Repository called with limit = 50
+
+4. **List All With Cursor Test**:
+   - Arrange: Mock InventoryItemRepository to return second page of results
+   - Act: Call listAll(limit = 20, cursor = "valid-encoded-cursor")
+   - Assert: Repository called with provided cursor, returns second page results
+
+5. **List All Invalid Limit Default Test**:
+   - Arrange: Mock InventoryItemRepository
+   - Act: Call listAll(limit = -5, cursor = null)
+   - Assert: Repository called with default limit = 20 (validation at service or controller layer)
+
+6. **List All Invalid Cursor Propagates Error Test**:
+   - Arrange: Mock InventoryItemRepository to throw InvalidCursorError when called with invalid cursor
+   - Act: Call listAll(limit = 20, cursor = "invalid-cursor")
+   - Assert: InvalidCursorError is propagated from repository
+
+7. **List All Empty Inventory Test**:
+   - Arrange: Mock InventoryItemRepository to return PaginatedInventoryItems.empty()
+   - Act: Call listAll(limit = 20, cursor = null)
+   - Assert: Returns empty PaginatedInventoryItems with items = [], nextCursor = null, hasMore = false
+
+### PostgresInventoryItemRepository Tests
+Test file location: `tests/contexts/inventory/inventory-items/infrastructure/persistence/postgres-inventory-item-repository.spec.ts`
+
+1. **Search All First Page Query Test**:
+   - Arrange: Mock PostgresConnection with 21 inventory items in database
+   - Act: Call searchAll(limit = 20, cursor = null)
+   - Assert: SQL query uses ORDER BY name ASC, created_at ASC without WHERE clause, returns 20 items with hasMore = true
+
+2. **Search All With Cursor Query Test**:
+   - Arrange: Mock PostgresConnection, decode cursor to name = "Banana", createdAt = "2024-01-10T08:00:00Z"
+   - Act: Call searchAll(limit = 20, cursor = "valid-encoded-cursor")
+   - Assert: SQL query uses WHERE clause with name > 'Banana' OR (name = 'Banana' AND created_at > '2024-01-10T08:00:00Z'), ordered correctly
+
+3. **Search All Last Page Detection Test**:
+   - Arrange: Mock PostgresConnection to return exactly 15 items (less than limit + 1)
+   - Act: Call searchAll(limit = 20, cursor = null)
+   - Assert: Returns PaginatedInventoryItems with all 15 items, nextCursor = null, hasMore = false
+
+4. **Search All Cursor Construction Test**:
+   - Arrange: Mock PostgresConnection to return 21 items (one extra for hasMore detection)
+   - Act: Call searchAll(limit = 20, cursor = null)
+   - Assert: Returns 20 items (21st removed), nextCursor encoded from 21st item's name and createdAt, hasMore = true
+
+5. **Search All Empty Database Test**:
+   - Arrange: Mock PostgresConnection to return empty result set
+   - Act: Call searchAll(limit = 20, cursor = null)
+   - Assert: Returns PaginatedInventoryItems.empty()
+
+6. **Search All Invalid Cursor Error Test**:
+   - Arrange: Mock Cursor.decode() to throw InvalidCursorError for malformed token
+   - Act: Call searchAll(limit = 20, cursor = "malformed-cursor")
+   - Assert: InvalidCursorError is thrown with descriptive message
+
+7. **Search All Limit Validation Test**:
+   - Arrange: Mock PostgresConnection
+   - Act: Call searchAll(limit = 150, cursor = null)
+   - Assert: Validates limit to maximum 100, either throws error or defaults to max (implementation decision)
+
+### API Route Handler Tests
+Test file location: `tests/app/api/inventory/items/route.spec.ts`
+
+1. **GET Request Success Test**:
+   - Arrange: Mock InventoryItemLister to return valid PaginatedInventoryItems
+   - Act: Call GET /api/inventory/items?limit=10
+   - Assert: Returns 200 status with JSON response containing items array, nextCursor, hasMore fields
+
+2. **GET Request With Cursor Test**:
+   - Arrange: Mock InventoryItemLister
+   - Act: Call GET /api/inventory/items?limit=10&cursor=encoded-token
+   - Assert: Returns 200 status, lister called with provided cursor parameter
+
+3. **GET Request Invalid Cursor Error Test**:
+   - Arrange: Mock InventoryItemLister to throw InvalidCursorError
+   - Act: Call GET /api/inventory/items?cursor=invalid-token
+   - Assert: Returns 400 Bad Request with error message indicating invalid cursor
+
+4. **GET Request Missing Parameters Default Test**:
+   - Arrange: Mock InventoryItemLister
+   - Act: Call GET /api/inventory/items (no query params)
+   - Assert: lister called with default limit = 20, cursor = null
+
+5. **GET Request Empty Results Test**:
+   - Arrange: Mock InventoryItemLister to return PaginatedInventoryItems.empty()
+   - Act: Call GET /api/inventory/items
+   - Assert: Returns 200 status (not 404) with empty items array, nextCursor = null, hasMore = false
+
+6. **GET Request Invalid Limit Handling Test**:
+   - Arrange: Mock InventoryItemLister
+   - Act: Call GET /api/inventory/items?limit=abc (non-numeric)
+   - Assert: Route handler defaults to limit = 20, returns 200 or 400 (implementation decision)
+
+7. **GET Request Unexpected Error Test**:
+   - Arrange: Mock InventoryItemLister to throw unexpected error
+   - Act: Call GET /api/inventory/items
+   - Assert: Returns 500 Internal Server Error with generic error message
+
+8. **POST Endpoint Unchanged Test**:
+   - Arrange: Mock existing dependencies for POST handler
+   - Act: Call POST /api/inventory/items with valid payload
+   - Assert: POST handler still functions correctly (regression test)
+
+### Integration Tests (Optional)
+Test file location: `tests/contexts/inventory/inventory-items/integration/inventory-listing.integration.spec.ts`
+
+1. **End-to-End Pagination Flow Test**:
+   - Arrange: Seed test database with 45 inventory items across various states
+   - Act: Fetch first page (limit = 20), then second page using returned nextCursor
+   - Assert: First page returns 20 items with valid nextCursor, second page returns 20 items with different nextCursor, third page returns 5 items with nextCursor = null and hasMore = false
+
+2. **Alphabetical Ordering Test**:
+   - Arrange: Seed test database with items: "Zucchini", "Apple", "Banana"
+   - Act: Fetch all items (limit = 100)
+   - Assert: Items returned in order: Apple, Banana, Zucchini (alphabetical)
+
+3. **Duplicate Name Handling Test**:
+   - Arrange: Seed test database with 3 items named "Apple" with different createdAt timestamps
+   - Act: Fetch items with cursor from first "Apple"
+   - Assert: Pagination correctly orders by createdAt when names are identical
+
+4. **Performance Test**:
+   - Arrange: Seed test database with 1000 inventory items
+   - Act: Fetch page with limit = 20
+   - Assert: Query execution time < 500ms (database index is working)
+
 ## Norms
 1. **Annotation Standards**:
    - Application services: `@Service()` decorator from diod
@@ -312,6 +511,23 @@ classDiagram
    - Leverage existing shared types (AggregateRoot, ValueObject patterns)
    - Use `readonly` for immutable properties in value objects
    - Prefer `interface` for DTOs, `class` for domain entities with behavior
+
+8. **Testing Standards**:
+   - **Test Location**: Place unit tests in `tests/contexts/inventory/inventory-items/` mirroring source structure
+   - **Test Framework**: Use existing test framework (Jest or Vitest as configured in project)
+   - **Object Mothers**: Use object mother pattern to instantiate test aggregates (InventoryItemMother class)
+   - **Mock Objects**: Create mock implementations of domain interfaces (MockInventoryItemRepository implements InventoryItemRepository)
+   - **Test Structure**: Arrange-Act-Assert (AAA) pattern for test clarity
+   - **Coverage Target**: Minimum 80% coverage for domain layer, 70% for application layer
+   - **Testing Pyramid**: Focus on unit tests for business logic, use integration tests for database queries
+   - **Naming Conventions**: Test methods named `should_[expected_behavior]_when_[state_or_action]`
+
+### Testing Principles
+1. **Domain Layer Tests**: Test value object validation, entity state transitions, business rules in isolation
+2. **Application Layer Tests**: Test use case orchestration with mocked dependencies
+3. **Repository Tests**: Test SQL logic with test database or mock implementations
+4. **API Route Tests**: Test request/response handling with mocked services
+5. **Edge Case Coverage**: Test empty results, pagination boundaries, invalid input, error conditions
 
 ## Safeguards
 1. **Functional Constraints**:
