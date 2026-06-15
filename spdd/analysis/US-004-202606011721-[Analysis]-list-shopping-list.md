@@ -1,8 +1,8 @@
-# SPDD Analysis: [STORY-001-004] List Shopping List
+# SPDD Analysis: List Shopping List API
 
 ## Original Business Requirement
 
-# [STORY-001-004] List Shopping List
+# List Shopping List
 
 ## Background
 

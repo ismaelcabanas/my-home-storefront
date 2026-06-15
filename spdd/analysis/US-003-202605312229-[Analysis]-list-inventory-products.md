@@ -1,8 +1,8 @@
-# SPDD Analysis: [STORY-001-003] List All Inventory Products
+# SPDD Analysis: List All Inventory Products API
 
 ## Original Business Requirement
 
-# [STORY-001-003] List All Inventory Products
+# List All Inventory Products
 
 ## Background
 
